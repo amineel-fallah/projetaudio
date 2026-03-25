@@ -1,0 +1,60 @@
+# Training configuration
+train:
+  epochs: 50
+  batch_size: 64
+  learning_rate: 0.0001
+  weight_decay: 0.0001
+  early_stopping_patience: 10
+  
+# Model configuration
+model:
+  type: cnn_lstm  # Options: cnn_lstm, simple_cnn, wav2vec2
+  num_classes: 6
+  hidden_size: 128
+  num_lstm_layers: 2
+  dropout: 0.3
+  
+# Audio configuration
+audio:
+  sample_rate: 16000
+  duration: 4.0  # seconds
+  n_mfcc: 13
+  n_mels: 128
+  hop_length: 512
+  n_fft: 2048
+  
+# Data augmentation
+augmentation:
+  enabled: true
+  noise_factor: 0.005
+  pitch_shift_range: [-2, 2]
+  time_stretch_range: [0.9, 1.1]
+  
+# Dataset
+dataset:
+  name: ravdess
+  path: data/ravdess
+  train_ratio: 0.8
+  val_ratio: 0.1
+  test_ratio: 0.1
+  
+# Emotions to classify
+emotions:
+  - neutral
+  - happy
+  - sad
+  - angry
+  - fearful
+  - surprised
+  
+# Paths
+paths:
+  data_dir: data
+  model_dir: models
+  log_dir: logs
+  
+# MLflow tracking
+mlflow:
+  enabled: false
+  experiment_name: speech_emotion_recognition
+  tracking_uri: mlruns
