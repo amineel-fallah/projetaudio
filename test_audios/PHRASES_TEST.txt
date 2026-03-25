@@ -1,0 +1,64 @@
+🎤 PHRASES DE TEST - RECONNAISSANCE D'ÉMOTIONS
+============================================================
+
+😐 NEUTRAL
+Conseil: Parlez de manière monotone, sans émotion particulière.
+
+  1. Bonjour, comment allez-vous aujourd'hui ?
+  2. Je vais à la bibliothèque cet après-midi.
+  3. Il est treize heures et quinze minutes.
+  4. Le temps est nuageux ce matin.
+  5. Je dois terminer ce rapport.
+
+😊 HAPPY
+Conseil: Souriez en parlant, voix enjouée et dynamique.
+
+  1. C'est fantastique ! Je suis super content !
+  2. J'ai réussi mon examen ! Quelle joie !
+  3. Nous partons en vacances demain ! Génial !
+  4. J'adore cette musique, elle est magnifique !
+  5. Quel beau cadeau, merci beaucoup !
+
+😢 SAD
+Conseil: Voix basse, lente, sans énergie.
+
+  1. C'est vraiment dommage... je suis déçu.
+  2. Je me sens seul aujourd'hui.
+  3. Cette nouvelle m'a vraiment attristé.
+  4. Je n'arrive pas à surmonter cette épreuve.
+  5. Tout semble si difficile en ce moment.
+
+😡 ANGRY
+Conseil: Voix forte, tendue, articulation marquée.
+
+  1. C'est inacceptable ! Je ne suis pas d'accord !
+  2. J'en ai assez de cette situation !
+  3. Comment osez-vous me parler ainsi ?!
+  4. Cela me met hors de moi !
+  5. Je refuse catégoriquement cette décision !
+
+😨 FEARFUL
+Conseil: Voix tremblante, hésitante, anxieuse.
+
+  1. Oh non... j'ai peur que ça arrive...
+  2. Je ne sais pas si je vais y arriver...
+  3. Cela m'inquiète beaucoup, vraiment beaucoup.
+  4. J'ai un mauvais pressentiment à ce sujet.
+  5. Je tremble rien que d'y penser.
+
+😲 SURPRISED
+Conseil: Voix haute, exclamative, dynamique.
+
+  1. Quoi ?! Vraiment ?! C'est incroyable !
+  2. Je n'en crois pas mes oreilles !
+  3. Wow ! Je ne m'attendais pas à ça !
+  4. C'est une surprise totale !
+  5. Ça alors ! Quelle nouvelle !
+
+
+Instructions:
+1. Lancer: python app.py
+2. Cliquer micro 🎙️
+3. Lire une phrase (3-5s)
+4. Noter le résultat
+5. Répéter pour toutes les phrases
