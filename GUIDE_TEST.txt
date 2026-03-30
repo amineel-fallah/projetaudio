@@ -1,0 +1,76 @@
+
+=================================================================
+GUIDE DE TEST - SPEECH EMOTION RECOGNITION
+=================================================================
+
+APPLICATION LANCEE !
+--------------------
+L application Gradio devrait etre accessible a :
+http://127.0.0.1:7861
+
+FICHIERS AUDIO DE TEST DISPONIBLES
+-----------------------------------
+6 fichiers audio synthetiques ont ete crees pour tester chaque emotion :
+
+1. test_happy.wav      - Emotion : JOYEUX (Happy)
+   Caracteristiques : Frequence elevee (500Hz), modulation rapide (5Hz)
+   
+2. test_sad.wav        - Emotion : TRISTE (Sad)
+   Caracteristiques : Frequence basse (200Hz), attenuation progressive
+   
+3. test_angry.wav      - Emotion : EN COLERE (Angry)
+   Caracteristiques : Forte intensite, distorsion, harmoniques
+   
+4. test_fearful.wav    - Emotion : APEURE (Fearful)
+   Caracteristiques : Tremblement rapide (12Hz), amplitude variable
+   
+5. test_neutral.wav    - Emotion : NEUTRE (Neutral)
+   Caracteristiques : Monotone stable a 250Hz
+   
+6. test_surprised.wav  - Emotion : SURPRIS (Surprised)
+   Caracteristiques : Pic soudain, montee rapide en intensite
+
+COMMENT TESTER
+--------------
+1. Ouvrez http://127.0.0.1:7861 dans votre navigateur
+
+2. Trois methodes de test :
+   a) Uploader un des fichiers test_*.wav crees
+   b) Parler dans le micro (en anglais de preference)
+   c) Utiliser les exemples integres dans l interface
+
+3. Options avancees disponibles :
+   - Duree analyse : 2-6 secondes
+   - Lissage multi-decalages : ameliore la stabilite
+   - Filtre coupe-bas : reduit le bruit de fond
+
+4. Visualisations affichees :
+   - Mel-spectrogramme : representation temps-frequence
+   - Probabilites emotions : barres horizontales avec prediction
+
+REMARQUES IMPORTANTES
+----------------------
+- Le modele est entraine sur RAVDESS (acteurs anglophones)
+- Les fichiers synthetiques simulent des caracteristiques vocales
+- Pour de vrais tests, utilisez des enregistrements vocaux humains
+- Le dataset RAVDESS contient des emotions authentiques
+
+PERFORMANCES ATTENDUES
+----------------------
+- Target : >80% F1-score macro
+- 6 classes : neutral, happy, sad, angry, fearful, surprised
+- Architecture : CNN-LSTM (36 MB)
+- Features : Mel-spectrogrammes 128 bandes
+
+FICHIERS AUDIO REELS (optionnel)
+---------------------------------
+Pour tester avec des vrais enregistrements RAVDESS, telechargez :
+https://zenodo.org/record/1188976
+
+Format noms fichiers RAVDESS :
+03-01-XX-YY-ZZ-AA-BB.wav
+   XX = emotion (01-08)
+   YY = intensite (01-02)
+   ...
+
+=================================================================

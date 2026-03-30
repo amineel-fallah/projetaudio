@@ -1,6 +1,7 @@
 """
 Feature Extraction Module for Speech Emotion Recognition
 Extracts MFCCs, mel-spectrograms using scipy (no numba dependency)
+Enhanced with prosodic features for better emotion detection
 """
 
 import numpy as np
@@ -53,6 +54,55 @@ def get_mel_filterbank(sr, n_fft, n_mels, fmin=0, fmax=None):
                 filterbank[i, j] = (right - j) / (right - center)
     
     return filterbank
+
+
+def compute_energy_features(signal: np.ndarray, sr: int = SAMPLE_RATE) -> np.ndarray:
+    """
+    Compute energy-related features that help distinguish emotions.
+    High energy: angry, happy, surprised
+    Low energy: sad, neutral
+    """
+    frame_length = int(0.025 * sr)  # 25ms frames
+    hop = int(0.010 * sr)  # 10ms hop
+    
+    # Frame the signal
+    n_frames = 1 + (len(signal) - frame_length) // hop
+    frames = np.zeros((n_frames, frame_length))
+    for i in range(n_frames):
+        start = i * hop
+        frames[i] = signal[start:start + frame_length]
+    
+    # RMS energy per frame
+    rms = np.sqrt(np.mean(frames ** 2, axis=1))
+    
+    # Zero crossing rate per frame
+    zcr = np.sum(np.abs(np.diff(np.sign(frames), axis=1)), axis=1) / (2 * frame_length)
+    
+    return rms, zcr
+
+
+def compute_pitch_features(signal: np.ndarray, sr: int = SAMPLE_RATE) -> float:
+    """
+    Estimate fundamental frequency (F0) using autocorrelation.
+    Higher pitch: surprised, happy, fearful
+    Lower pitch: sad, angry, neutral
+    """
+    # Use autocorrelation method
+    min_period = int(sr / 500)  # Max F0 = 500 Hz
+    max_period = int(sr / 50)   # Min F0 = 50 Hz
+    
+    correlation = np.correlate(signal, signal, mode='full')
+    correlation = correlation[len(correlation)//2:]
+    
+    # Find peaks in the valid range
+    correlation = correlation[min_period:max_period]
+    if len(correlation) > 0:
+        peak_idx = np.argmax(correlation) + min_period
+        f0 = sr / peak_idx if peak_idx > 0 else 0
+    else:
+        f0 = 0
+    
+    return f0
 
 
 def load_audio(file_path: str, sr: int = SAMPLE_RATE, duration: float = DURATION) -> np.ndarray:
@@ -155,18 +205,27 @@ def extract_mfcc(signal: np.ndarray, sr: int = SAMPLE_RATE, n_mfcc: int = N_MFCC
 
 
 def extract_mel_spectrogram(signal: np.ndarray, sr: int = SAMPLE_RATE, 
-                            n_mels: int = N_MELS) -> np.ndarray:
+                            n_mels: int = N_MELS, 
+                            enhanced: bool = True,
+                            target_length: int = 128) -> np.ndarray:
     """
     Extract mel-spectrogram features (scipy-based, no librosa/numba).
+    Enhanced version captures more emotional nuances.
     
     Args:
         signal: Audio signal
         sr: Sample rate
         n_mels: Number of mel bands
+        enhanced: Apply enhancement for emotion detection
+        target_length: Fixed time dimension for the output
         
     Returns:
-        Log mel-spectrogram (shape: n_mels x time_frames)
+        Log mel-spectrogram (shape: n_mels x target_length)
     """
+    # Pre-emphasis filter to boost high frequencies (helps with emotion detection)
+    if enhanced:
+        signal = np.append(signal[0], signal[1:] - 0.97 * signal[:-1])
+    
     # Compute STFT using scipy
     frequencies, times, Zxx = scipy_signal.stft(
         signal, fs=sr, nperseg=N_FFT, noverlap=N_FFT - HOP_LENGTH, 
@@ -177,11 +236,28 @@ def extract_mel_spectrogram(signal: np.ndarray, sr: int = SAMPLE_RATE,
     power_spec = np.abs(Zxx) ** 2
     
     # Get mel filterbank and apply
-    mel_filter = get_mel_filterbank(sr, N_FFT, n_mels)
+    mel_filter = get_mel_filterbank(sr, N_FFT, n_mels, fmin=20, fmax=sr//2 - 500)
     mel_spec = np.dot(mel_filter, power_spec)
     
-    # Convert to dB
-    log_mel_spec = power_to_db(mel_spec, ref=np.max(mel_spec))
+    # Convert to dB with better dynamic range
+    log_mel_spec = power_to_db(mel_spec, ref=np.max(mel_spec), top_db=100)
+    
+    # Apply per-channel energy normalization (PCEN) approximation for robustness
+    if enhanced:
+        # Simple PCEN-like normalization
+        log_mel_spec = (log_mel_spec - log_mel_spec.mean(axis=1, keepdims=True)) / (
+            log_mel_spec.std(axis=1, keepdims=True) + 1e-8
+        )
+    
+    # Ensure fixed time dimension
+    current_length = log_mel_spec.shape[1]
+    if current_length > target_length:
+        # Truncate
+        log_mel_spec = log_mel_spec[:, :target_length]
+    elif current_length < target_length:
+        # Pad with zeros
+        pad_width = target_length - current_length
+        log_mel_spec = np.pad(log_mel_spec, ((0, 0), (0, pad_width)), mode='constant')
     
     return log_mel_spec
 

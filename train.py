@@ -5,14 +5,16 @@ Training script for Speech Emotion Recognition
 import os
 import sys
 import argparse
-from typing import Tuple
+from typing import Tuple, Optional
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 import numpy as np
 from tqdm import tqdm
 from sklearn.metrics import f1_score, confusion_matrix, classification_report
+from sklearn.utils.class_weight import compute_class_weight
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
@@ -26,13 +28,81 @@ from src.model import get_model
 from src.dataset import create_dataloaders
 
 
+class FocalLossWithSmoothing(nn.Module):
+    """
+    Focal Loss with Label Smoothing for better emotion detection.
+    Focal Loss helps focus on hard-to-classify examples (neutral, happy, sad).
+    """
+    
+    def __init__(self, gamma=2.0, smoothing=0.1, weight=None):
+        super().__init__()
+        self.gamma = gamma
+        self.smoothing = smoothing
+        self.weight = weight
+        
+    def forward(self, pred, target):
+        n_classes = pred.size(-1)
+        
+        # Apply label smoothing
+        with torch.no_grad():
+            smooth_target = torch.zeros_like(pred)
+            smooth_target.fill_(self.smoothing / (n_classes - 1))
+            smooth_target.scatter_(1, target.unsqueeze(1), 1.0 - self.smoothing)
+        
+        # Compute log softmax
+        log_probs = F.log_softmax(pred, dim=-1)
+        probs = torch.exp(log_probs)
+        
+        # Focal weight: (1 - p)^gamma
+        focal_weight = (1 - probs) ** self.gamma
+        
+        # Compute focal loss with smoothed labels
+        loss = -focal_weight * smooth_target * log_probs
+        
+        # Apply class weights if provided
+        if self.weight is not None:
+            weight = self.weight.to(pred.device)
+            loss = loss * weight.unsqueeze(0)
+        
+        return loss.sum(dim=-1).mean()
+
+
+class LabelSmoothingCrossEntropy(nn.Module):
+    """Cross entropy loss with label smoothing to prevent overconfidence."""
+    
+    def __init__(self, smoothing=0.1, weight=None):
+        super().__init__()
+        self.smoothing = smoothing
+        self.weight = weight
+        
+    def forward(self, pred, target):
+        n_classes = pred.size(-1)
+        log_probs = torch.nn.functional.log_softmax(pred, dim=-1)
+        
+        # Create smoothed labels
+        with torch.no_grad():
+            smooth_target = torch.zeros_like(log_probs)
+            smooth_target.fill_(self.smoothing / (n_classes - 1))
+            smooth_target.scatter_(1, target.unsqueeze(1), 1.0 - self.smoothing)
+        
+        # Apply class weights if provided
+        if self.weight is not None:
+            smooth_target = smooth_target * self.weight.unsqueeze(0)
+        
+        loss = (-smooth_target * log_probs).sum(dim=-1)
+        return loss.mean()
+
+
 class Trainer:
     """Training class for emotion recognition models."""
     
     def __init__(self, model: nn.Module, train_loader: DataLoader,
                  val_loader: DataLoader, device: str = None,
                  learning_rate: float = LEARNING_RATE,
-                 class_weights: torch.Tensor = None):
+                 class_weights: torch.Tensor = None,
+                 label_smoothing: float = 0.1,
+                 use_focal_loss: bool = True,
+                 focal_gamma: float = 2.0):
         """
         Initialize trainer.
         
@@ -43,30 +113,46 @@ class Trainer:
             device: Device to train on
             learning_rate: Learning rate
             class_weights: Optional class weights for imbalanced data
+            label_smoothing: Label smoothing factor (0.1 = 10% smoothing)
+            use_focal_loss: Use Focal Loss for hard examples (recommended)
+            focal_gamma: Focal loss gamma parameter
         """
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
         self.train_loader = train_loader
         self.val_loader = val_loader
         
-        # Loss function with class weights
-        if class_weights is not None:
-            class_weights = class_weights.to(self.device)
-        self.criterion = nn.CrossEntropyLoss(weight=class_weights)
+        # Loss function - Focal Loss with smoothing helps with all emotions
+        if use_focal_loss:
+            self.criterion = FocalLossWithSmoothing(
+                gamma=focal_gamma,
+                smoothing=label_smoothing,
+                weight=class_weights
+            )
+            print(f"Using Focal Loss (gamma={focal_gamma}) with label smoothing ({label_smoothing})")
+        elif label_smoothing > 0:
+            self.criterion = LabelSmoothingCrossEntropy(
+                smoothing=label_smoothing,
+                weight=class_weights.to(self.device) if class_weights is not None else None
+            )
+        else:
+            if class_weights is not None:
+                class_weights = class_weights.to(self.device)
+            self.criterion = nn.CrossEntropyLoss(weight=class_weights)
         
-        # Optimizer
-        self.optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+        # Optimizer with weight decay
+        self.optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
         
-        # Learning rate scheduler
-        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, mode='min', patience=5, factor=0.5
+        # Learning rate scheduler - cosine annealing for better convergence
+        self.scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            self.optimizer, T_0=10, T_mult=2, eta_min=1e-6
         )
         
         # Training history
         self.history = {
             'train_loss': [], 'val_loss': [],
             'train_acc': [], 'val_acc': [],
-            'val_f1': []
+            'val_f1': [], 'per_class_f1': []
         }
         
     def train_epoch(self) -> Tuple[float, float]:
@@ -150,8 +236,8 @@ class Trainer:
             # Validate
             val_loss, val_acc, val_f1 = self.validate()
             
-            # Update scheduler
-            self.scheduler.step(val_loss)
+            # Update scheduler (CosineAnnealingWarmRestarts takes epoch number)
+            self.scheduler.step(epoch)
             
             # Log metrics
             self.history['train_loss'].append(train_loss)
@@ -277,40 +363,55 @@ def main(epochs: int = None):
         print("Please run: python download_ravdess.py")
         return
     
-    # Create model
-    model = get_model("cnn_lstm", num_classes=len(EMOTION_LABELS))
+    # Create model with improved architecture
+    model = get_model("cnn_lstm", num_classes=len(EMOTION_LABELS), 
+                      hidden_size=256, dropout=0.4, use_attention=True)
     print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
     
-    # Create datasets
+    # Create datasets with augmentation
     print("\nLoading dataset...")
     from src.dataset import RAVDESSDataset
 
-    full_dataset = RAVDESSDataset(str(ravdess_path), split="train", augment=False)
-    print(f"Total train samples: {len(full_dataset)}")
+    # Load training data to compute class weights
+    train_dataset = RAVDESSDataset(str(ravdess_path), split="train", augment=True)
+    print(f"Total train samples (with augmentation): {len(train_dataset)}")
 
-    if len(full_dataset) == 0:
+    if len(train_dataset) == 0:
         print("Error: No samples found in dataset!")
         return
+
+    # Compute class weights to handle imbalance
+    train_labels = [train_dataset.labels[i] for i in train_dataset.indices]
+    class_weights = compute_class_weight(
+        'balanced',
+        classes=np.arange(NUM_CLASSES),
+        y=train_labels
+    )
+    class_weights = torch.FloatTensor(class_weights)
+    print(f"Class weights: {class_weights}")
 
     train_loader, val_loader, _ = create_dataloaders(
         str(ravdess_path),
         batch_size=BATCH_SIZE,
-        num_workers=0
+        num_workers=0,
+        augment=True  # Enable augmentation
     )
-    print(f"Train samples: {len(train_loader.dataset)}")
-    print(f"Val samples: {len(val_loader.dataset)}")
+    print(f"Train batches: {len(train_loader)}")
+    print(f"Val batches: {len(val_loader)}")
 
     if len(val_loader.dataset) == 0:
         print("Error: Validation split is empty. Check dataset structure.")
         return
     
-    # Create trainer
+    # Create trainer with class weights and label smoothing
     trainer = Trainer(
         model=model,
         train_loader=train_loader,
         val_loader=val_loader,
         device=device,
-        learning_rate=LEARNING_RATE
+        learning_rate=LEARNING_RATE,
+        class_weights=class_weights,
+        label_smoothing=0.1
     )
     
     # Train

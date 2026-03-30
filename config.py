@@ -12,8 +12,8 @@ N_FFT = 2048
 
 # Model parameters
 BATCH_SIZE = 32
-LEARNING_RATE = 1e-4
-EPOCHS = 30  # Increased for better accuracy
+LEARNING_RATE = 5e-4  # Increased from 1e-4 for faster convergence
+EPOCHS = 50  # Increased for better accuracy
 
 # Emotion labels (RAVDESS encoding)
 EMOTIONS = {

@@ -77,9 +77,16 @@ class RAVDESSDataset(Dataset):
                     emotion_code = parts[2]
                     emotion_name = EMOTIONS.get(emotion_code, None)
                     
-                    if emotion_name and emotion_name in EMOTION_LABELS:
-                        label = EMOTION_TO_IDX[emotion_name]
-                        samples.append((str(audio_file), label))
+                    if emotion_name:
+                        # Map calm to neutral, skip disgust
+                        if emotion_name == "calm":
+                            emotion_name = "neutral"
+                        elif emotion_name == "disgust":
+                            continue  # Skip disgust - not in our labels
+                        
+                        if emotion_name in EMOTION_LABELS:
+                            label = EMOTION_TO_IDX[emotion_name]
+                            samples.append((str(audio_file), label))
         
         return samples
 
@@ -117,6 +124,9 @@ class RAVDESSDataset(Dataset):
             ]
 
             if split_samples:
+                # Store for class weight computation
+                self.indices = list(range(len(split_samples)))
+                self.labels = [label for _, label in split_samples]
                 return split_samples
 
         # Fallback split when actor folders are insufficient.
@@ -129,6 +139,10 @@ class RAVDESSDataset(Dataset):
                 split_samples.append((file_path, label))
             elif self.split == "test" and bucket == 9:
                 split_samples.append((file_path, label))
+        
+        # Store for class weight computation
+        self.indices = list(range(len(split_samples)))
+        self.labels = [label for _, label in split_samples]
         return split_samples
     
     def __len__(self) -> int:
@@ -146,12 +160,19 @@ class RAVDESSDataset(Dataset):
         # Load and extract features
         signal = load_audio(file_path)
         
-        # Apply augmentation
+        # Apply augmentation with higher probability
         if self.augment:
-            if np.random.random() < 0.5:
-                signal = add_noise(signal)
-            if np.random.random() < 0.3:
+            # Add noise more frequently
+            if np.random.random() < 0.6:
+                signal = add_noise(signal, noise_factor=np.random.uniform(0.002, 0.01))
+            # Pitch shift occasionally
+            if np.random.random() < 0.4:
                 signal = pitch_shift(signal, n_steps=np.random.uniform(-2, 2))
+            # Time stretch occasionally
+            if np.random.random() < 0.3:
+                import librosa
+                rate = np.random.uniform(0.9, 1.1)
+                signal = librosa.effects.time_stretch(signal, rate=rate)
         
         # Extract mel-spectrogram
         mel_spec = extract_mel_spectrogram(signal)
@@ -192,7 +213,7 @@ class EmotionDataset(Dataset):
 
 
 def create_dataloaders(data_dir: str, batch_size: int = 64, 
-                       num_workers: int = 4) -> Tuple[DataLoader, DataLoader, DataLoader]:
+                       num_workers: int = 4, augment: bool = True) -> Tuple[DataLoader, DataLoader, DataLoader]:
     """
     Create train, validation, and test dataloaders.
     
@@ -200,12 +221,13 @@ def create_dataloaders(data_dir: str, batch_size: int = 64,
         data_dir: Path to data directory
         batch_size: Batch size
         num_workers: Number of data loading workers
+        augment: Whether to use augmentation for training data
         
     Returns:
         Tuple of (train_loader, val_loader, test_loader)
     """
     # Create datasets
-    train_dataset = RAVDESSDataset(data_dir, split="train", augment=True)
+    train_dataset = RAVDESSDataset(data_dir, split="train", augment=augment)
     val_dataset = RAVDESSDataset(data_dir, split="val", augment=False)
     test_dataset = RAVDESSDataset(data_dir, split="test", augment=False)
     
